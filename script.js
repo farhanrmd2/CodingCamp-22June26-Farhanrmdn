@@ -6,6 +6,7 @@
 // Constants
 // ============================================================================
 const STORAGE_KEY = 'expense_tracker_data';
+const THEME_KEY   = 'expense_tracker_theme';
 const CHART_CONFIG = {
     colors: {
         'Food': '#EF4444',
@@ -44,19 +45,86 @@ function saveTransactions(transactions) {
 let transactions = loadTransactions();
 
 // ============================================================================
+// Theme Management
+// ============================================================================
+
+/**
+ * Get the effective theme:
+ *   1. User's saved preference (LocalStorage)
+ *   2. OS/browser preference (prefers-color-scheme)
+ *   3. Default: light
+ */
+function getInitialTheme() {
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved === 'dark' || saved === 'light') return saved;
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        return 'dark';
+    }
+    return 'light';
+}
+
+/**
+ * Apply a theme to the document and update the toggle button label.
+ * Does NOT save to LocalStorage — call saveTheme() for that.
+ */
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+
+    const label = document.getElementById('themeLabel');
+    if (label) {
+        label.textContent = theme === 'dark' ? 'Dark Mode' : 'Light Mode';
+    }
+
+    const btn = document.getElementById('themeToggle');
+    if (btn) {
+        btn.setAttribute('aria-label', theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+        btn.setAttribute('title',      theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+    }
+}
+
+/**
+ * Save theme preference to LocalStorage
+ */
+function saveTheme(theme) {
+    localStorage.setItem(THEME_KEY, theme);
+}
+
+/**
+ * Toggle between light and dark, persist the choice, and re-render the chart
+ * so legend/empty-state colors update immediately.
+ */
+function handleThemeToggle() {
+    const current = document.documentElement.getAttribute('data-theme') || 'light';
+    const next = current === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    saveTheme(next);
+    // Re-render chart so legend colour matches the new theme
+    updateChart();
+}
+
+// ============================================================================
 // DOM Elements
 // ============================================================================
-const transactionForm = document.getElementById('transactionForm');
+const transactionForm  = document.getElementById('transactionForm');
 const descriptionInput = document.getElementById('description');
-const amountInput = document.getElementById('amount');
-const categoryInput = document.getElementById('category');
-const typeInputs = document.querySelectorAll('input[name="type"]');
+const amountInput      = document.getElementById('amount');
+const categoryInput    = document.getElementById('category');
+const typeInputs       = document.querySelectorAll('input[name="type"]');
 const transactionsList = document.getElementById('transactionsList');
-const clearBtn = document.getElementById('clearBtn');
-const totalBalanceEl = document.getElementById('totalBalance');
-const totalIncomeEl = document.getElementById('totalIncome');
-const totalExpenseEl = document.getElementById('totalExpense');
-const chartCanvas = document.getElementById('spendingChart');
+const clearBtn         = document.getElementById('clearBtn');
+const totalBalanceEl   = document.getElementById('totalBalance');
+const totalIncomeEl    = document.getElementById('totalIncome');
+const totalExpenseEl   = document.getElementById('totalExpense');
+const chartCanvas      = document.getElementById('spendingChart');
+const themeToggleBtn   = document.getElementById('themeToggle');
+
+// Filter & export elements
+const searchInput      = document.getElementById('searchInput');
+const filterCategory   = document.getElementById('filterCategory');
+const filterType       = document.getElementById('filterType');
+const clearFilterBtn   = document.getElementById('clearFilterBtn');
+const exportBtn        = document.getElementById('exportBtn');
+const transactionCount = document.getElementById('transactionCount');
 
 let chart = null;
 
@@ -65,6 +133,7 @@ let chart = null;
 // ============================================================================
 transactionForm.addEventListener('submit', handleAddTransaction);
 clearBtn.addEventListener('click', handleClearAll);
+themeToggleBtn.addEventListener('click', handleThemeToggle);
 
 // ============================================================================
 // Transaction Management
@@ -229,15 +298,30 @@ function updateDashboard() {
 }
 
 /**
- * Render transactions list
+ * Render transactions list, respecting any active search/filter state
  */
 function renderTransactions() {
-    if (transactions.length === 0) {
+    const total    = transactions.length;
+    const filtered = applyFilters(transactions);
+
+    // Update count badge
+    updateTransactionCount(filtered.length, total);
+
+    if (total === 0) {
         transactionsList.innerHTML = '<p class="empty-state">No transactions yet. Add one to get started!</p>';
         return;
     }
 
-    transactionsList.innerHTML = transactions
+    if (filtered.length === 0) {
+        transactionsList.innerHTML = `
+            <div class="filter-empty">
+                <span class="filter-empty__icon">🔍</span>
+                No transactions match your filters.
+            </div>`;
+        return;
+    }
+
+    transactionsList.innerHTML = filtered
         .map(t => `
             <div class="transaction-item ${t.type}">
                 <div class="transaction-info">
@@ -277,11 +361,18 @@ function updateChart() {
     // Create new chart
     const ctx = chartCanvas.getContext('2d');
 
+    // Read theme-aware colors from CSS variables at render time
+    const computedStyle    = getComputedStyle(document.documentElement);
+    const legendColor      = computedStyle.getPropertyValue('--chart-legend-color').trim() || '#334155';
+    const emptyColor       = computedStyle.getPropertyValue('--chart-empty-color').trim()  || '#6B7280';
+    const isDark           = document.documentElement.getAttribute('data-theme') === 'dark';
+    const borderColor      = isDark ? '#1E293B' : '#FFFFFF';
+
     if (categories.length === 0) {
         // Show empty state
         ctx.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
         ctx.font = '16px Arial';
-        ctx.fillStyle = '#6B7280';
+        ctx.fillStyle = emptyColor;
         ctx.textAlign = 'center';
         ctx.fillText('No expenses yet. Add a transaction to see the chart.', 
                      chartCanvas.width / 2, chartCanvas.height / 2);
@@ -296,7 +387,7 @@ function updateChart() {
                 {
                     data: amounts,
                     backgroundColor: chartColors,
-                    borderColor: '#FFFFFF',
+                    borderColor: borderColor,
                     borderWidth: 3,
                     borderRadius: 8,
                     spacing: 2
@@ -314,7 +405,7 @@ function updateChart() {
                             size: 14,
                             family: "system-ui, -apple-system, sans-serif"
                         },
-                        color: '#334155',
+                        color: legendColor,
                         padding: 16,
                         usePointStyle: true,
                         pointStyle: 'circle'
@@ -373,8 +464,15 @@ function updateUI() {
  * Initialize the app on page load
  */
 function initializeApp() {
+    // Apply saved/preferred theme before rendering UI (avoids flash)
+    applyTheme(getInitialTheme());
+
     // Update UI with loaded data
     updateUI();
+
+    // Wire up search/filter and export
+    initFilters();
+    exportBtn.addEventListener('click', handleExportCSV);
 
     // Verify Local Storage is working
     testLocalStorage();
@@ -404,6 +502,124 @@ if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initializeApp);
 } else {
     initializeApp();
+}
+
+// ============================================================================
+// Search & Filter
+// ============================================================================
+
+/**
+ * Get current filter values
+ */
+function getFilters() {
+    return {
+        search:   searchInput.value.trim().toLowerCase(),
+        category: filterCategory.value,
+        type:     filterType.value
+    };
+}
+
+/**
+ * Apply filters to the full transactions array and return matching items
+ */
+function applyFilters(list) {
+    const { search, category, type } = getFilters();
+    return list.filter(t => {
+        const matchSearch   = !search   || t.description.toLowerCase().includes(search);
+        const matchCategory = !category || t.category === category;
+        const matchType     = !type     || t.type === type;
+        return matchSearch && matchCategory && matchType;
+    });
+}
+
+/**
+ * Toggle the visual "active" state on filter inputs
+ */
+function syncFilterHighlights() {
+    const { search, category, type } = getFilters();
+    searchInput.classList.toggle('is-active',    !!search);
+    filterCategory.classList.toggle('is-active', !!category);
+    filterType.classList.toggle('is-active',     !!type);
+}
+
+/**
+ * Update the transaction count badge
+ */
+function updateTransactionCount(visible, total) {
+    if (!transactionCount) return;
+    if (total === 0) {
+        transactionCount.textContent = '';
+        transactionCount.style.display = 'none';
+        return;
+    }
+    transactionCount.style.display = '';
+    transactionCount.textContent = visible < total ? `${visible} / ${total}` : total;
+}
+
+/**
+ * Attach live filter listeners
+ */
+function initFilters() {
+    searchInput.addEventListener('input',    handleFilterChange);
+    filterCategory.addEventListener('change', handleFilterChange);
+    filterType.addEventListener('change',    handleFilterChange);
+    clearFilterBtn.addEventListener('click', handleClearFilters);
+}
+
+/**
+ * Re-render the list whenever any filter changes
+ */
+function handleFilterChange() {
+    syncFilterHighlights();
+    renderTransactions();
+}
+
+/**
+ * Reset all filters and re-render
+ */
+function handleClearFilters() {
+    searchInput.value    = '';
+    filterCategory.value = '';
+    filterType.value     = '';
+    syncFilterHighlights();
+    renderTransactions();
+}
+
+// ============================================================================
+// Export to CSV
+// ============================================================================
+
+/**
+ * Convert transactions array to a CSV string and trigger download
+ */
+function handleExportCSV() {
+    if (transactions.length === 0) {
+        alert('No transactions to export.');
+        return;
+    }
+
+    const headers = ['Description', 'Amount', 'Type', 'Category', 'Date', 'Time'];
+
+    const rows = transactions.map(t => [
+        `"${t.description.replace(/"/g, '""')}"`,
+        t.amount.toFixed(2),
+        t.type,
+        t.category,
+        t.date,
+        t.time
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob       = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url        = URL.createObjectURL(blob);
+
+    const link    = document.createElement('a');
+    link.href     = url;
+    link.download = `transactions_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 }
 
 // ============================================================================

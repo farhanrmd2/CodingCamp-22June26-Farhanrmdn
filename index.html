@@ -5,7 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Track your daily spending with Expense & Budget Visualizer">
     <title>Expense & Budget Visualizer</title>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="style.css">
+    <!-- Apply saved theme before CSS renders to prevent flash -->
+    <script>
+        (function() {
+            var saved = localStorage.getItem('expense_tracker_theme');
+            var theme = saved === 'dark' || saved === 'light'
+                ? saved
+                : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
 </head>
 <body>
@@ -13,8 +23,22 @@
         <!-- Header -->
         <header class="header">
             <div class="header-content">
-                <h1 class="header-title">💰 Budget Tracker</h1>
-                <p class="header-subtitle">Track your spending and manage your budget</p>
+                <div class="header-top">
+                    <div>
+                        <h1 class="header-title">💰 Budget Tracker</h1>
+                        <p class="header-subtitle">Track your spending and manage your budget</p>
+                    </div>
+                    <button 
+                        class="theme-toggle" 
+                        id="themeToggle" 
+                        aria-label="Toggle dark mode" 
+                        title="Toggle dark mode"
+                    >
+                        <span class="theme-toggle__icon theme-toggle__icon--light" aria-hidden="true">☀️</span>
+                        <span class="theme-toggle__icon theme-toggle__icon--dark" aria-hidden="true">🌙</span>
+                        <span class="theme-toggle__label" id="themeLabel">Light Mode</span>
+                    </button>
+                </div>
             </div>
         </header>
 
@@ -108,9 +132,49 @@
             <!-- Transactions History -->
             <section class="transactions-section">
                 <div class="transactions-header">
-                    <h2 class="section-title">Transaction History</h2>
-                    <button class="btn btn--small btn--secondary" id="clearBtn">Clear All</button>
+                    <h2 class="section-title">
+                        Transaction History
+                        <span class="transaction-count" id="transactionCount"></span>
+                    </h2>
+                    <div class="transactions-actions">
+                        <button class="btn btn--small btn--secondary" id="exportBtn" title="Export to CSV">
+                            ↓ Export CSV
+                        </button>
+                        <button class="btn btn--small btn--secondary" id="clearBtn">Clear All</button>
+                    </div>
                 </div>
+
+                <!-- Search & Filter Bar -->
+                <div class="filter-bar">
+                    <div class="filter-search">
+                        <span class="filter-search__icon" aria-hidden="true">🔍</span>
+                        <input
+                            type="text"
+                            id="searchInput"
+                            class="form-input filter-search__input"
+                            placeholder="Search transactions…"
+                            aria-label="Search transactions"
+                        >
+                    </div>
+                    <select id="filterCategory" class="form-select filter-select" aria-label="Filter by category">
+                        <option value="">All Categories</option>
+                        <option value="Food">Food & Dining</option>
+                        <option value="Transport">Transport</option>
+                        <option value="Shopping">Shopping</option>
+                        <option value="Entertainment">Entertainment</option>
+                        <option value="Utilities">Utilities</option>
+                        <option value="Health">Health & Fitness</option>
+                        <option value="Education">Education</option>
+                        <option value="Other">Other</option>
+                    </select>
+                    <select id="filterType" class="form-select filter-select" aria-label="Filter by type">
+                        <option value="">All Types</option>
+                        <option value="income">Income</option>
+                        <option value="expense">Expense</option>
+                    </select>
+                    <button class="btn btn--small btn--secondary" id="clearFilterBtn" title="Clear filters">✕ Clear</button>
+                </div>
+
                 <div class="transactions-list" id="transactionsList">
                     <p class="empty-state">No transactions yet. Add one to get started!</p>
                 </div>
@@ -123,6 +187,6 @@
         </footer>
     </div>
 
-    <script src="js/script.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>
